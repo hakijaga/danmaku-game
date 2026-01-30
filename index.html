@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2D弾幕ゲーム</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    touch-action: none;
+  }
+  canvas {
+    display: block;
+    background: #000;
+  }
+  #joystick {
+    position: absolute;
+    width: 120px;
+    height: 120px;
+    left: 50%;
+    bottom: 20%;
+    transform: translateX(-50%);
+    background: rgba(255,255,255,0.2);
+    border-radius: 50%;
+    touch-action: none;
+  }
+  #stick {
+    position: absolute;
+    width: 60px;
+    height: 60px;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(255,255,255,0.5);
+    border-radius: 50%;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="joystick">
+  <div id="stick"></div>
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+// プレイヤー
+const player = {
+  x: canvas.width/2,
+  y: canvas.height/2,
+  radius: 20,
+  color: 'lime',
+  speed: 3 // 少し遅くした
+};
+
+// ジョイスティック
+const joystick = document.getElementById('joystick');
+const stick = document.getElementById('stick');
+let stickX = 0;
+let stickY = 0;
+
+let touching = false;
+
+stick.addEventListener('touchstart', (e)=>{
+  touching = true;
+});
+
+stick.addEventListener('touchmove', (e)=>{
+  e.preventDefault();
+  if(!touching) return;
+  const rect = joystick.getBoundingClientRect();
+  const touch = e.touches[0];
+  let dx = touch.clientX - (rect.left + rect.width/2);
+  let dy = touch.clientY - (rect.top + rect.height/2);
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  const max = rect.width/2 - stick.offsetWidth/2;
+  if(dist > max){
+    dx = dx/dist*max;
+    dy = dy/dist*max;
+  }
+  stick.style.transform = `translate(${dx}px, ${dy}px)`;
+  stickX = dx/max;
+  stickY = dy/max;
+}, {passive:false});
+
+stick.addEventListener('touchend', ()=>{
+  touching = false;
+  stick.style.transform = 'translate(-50%, -50%)';
+  stickX = 0;
+  stickY = 0;
+});
+
+// ゲームループ
+function update(){
+  // プレイヤー移動
+  player.x += stickX * player.speed;
+  player.y += stickY * player.speed;
+
+  // 画面外に行かない制限
+  if(player.x < player.radius) player.x = player.radius;
+  if(player.x > canvas.width - player.radius) player.x = canvas.width - player.radius;
+  if(player.y < player.radius) player.y = player.radius;
+  if(player.y > canvas.height - player.radius) player.y = canvas.height - player.radius;
+}
+
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  // プレイヤー
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, player.radius,0,Math.PI*2);
+  ctx.fillStyle = player.color;
+  ctx.fill();
+}
+
+function loop(){
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+loop();
+
+// 画面リサイズ対応
+window.addEventListener('resize', ()=>{
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+});
+</script>
+</body>
+</html>
