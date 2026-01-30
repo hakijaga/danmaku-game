@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>弾幕サバイバル</title>
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#00ff88">
+
+<style>
+body { margin:0; background:#000; overflow:hidden; touch-action:none; }
+canvas { display:block; margin:auto; background:#000; }
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<script>
+// ===== Service Worker =====
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("service-worker.js");
+}
+
+// ===== Canvas =====
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+canvas.width = innerWidth;
+canvas.height = innerHeight;
+
+// ===== Sound =====
+const bgm = new Audio("bgm.mp3");
+bgm.loop = true;
+bgm.volume = 0.4;
+
+const seDamage = new Audio("damage.wav");
+seDamage.volume = 0.6;
+
+// ===== State =====
+let gameState = "title";
+let surviveTime = 0;
+let bestScore = localStorage.getItem("bestScore") || 0;
+
+// ===== Player =====
+const player = {
+  x: canvas.width/2,
+  y: canvas.height/2,
+  r: 12,
+  hp: 5,
+  speed: 4,
+  invincible: 0,
+  damageTimer: 0
+};
+
+// ===== Virtual Stick =====
+const stick = {
+  x: 100, y: canvas.height-100,
+  r: 50,
+  dx: 0, dy: 0,
+  active: false
+};
+
+// ===== Bullets =====
+const bullets = [];
+
+// ===== Touch =====
+canvas.addEventListener("touchstart", e=>{
+  const t = e.touches[0];
+  const dx = t.clientX - stick.x;
+  const dy = t.clientY - stick.y;
+  if (Math.hypot(dx,dy) < stick.r) {
+    stick.active = true;
+  } else if (gameState !== "play") {
+    startGame();
+  }
+});
+
+canvas.addEventListener("touchmove", e=>{
+  if(!stick.active) return;
+  const t = e.touches[0];
+  const dx = t.clientX - stick.x;
+  const dy = t.clientY - stick.y;
+  const len = Math.hypot(dx,dy);
+  const max = stick.r;
+  stick.dx = dx/len * Math.min(len,max);
+  stick.dy = dy/len * Math.min(len,max);
+});
+
+canvas.addEventListener("touchend", ()=>{
+  stick.active = false;
+  stick.dx = stick.dy = 0;
+});
+
+// ===== Start =====
+function startGame(){
+  surviveTime = 0;
+  bullets.length = 0;
+  player.hp = 5;
+  player.invincible = 60;
+  player.x = canvas.width/2;
+  player.y = canvas.height/2;
+
+  bgm.currentTime = 0;
+  bgm.play();
+
+  gameState = "play";
+}
+
+// ===== Spawn Bullet =====
+function spawnBullet(){
+  const side = Math.floor(Math.random()*4);
+  let x,y;
+  if(side===0){x=0;y=Math.random()*canvas.height;}
+  if(side===1){x=canvas.width;y=Math.random()*canvas.height;}
+  if(side===2){x=Math.random()*canvas.width;y=0;}
+  if(side===3){x=Math.random()*canvas.width;y=canvas.height;}
+
+  const dx = player.x-x;
+  const dy = player.y-y;
+  const len = Math.hypot(dx,dy);
+
+  const speed = 2 + surviveTime*0.05;
+  bullets.push({
+    x,y,
+    vx: dx/len*speed,
+    vy: dy/len*speed,
+    r: 8
+  });
+}
+
+// ===== Update =====
+function update(){
+  if(gameState!=="play") return;
+
+  surviveTime += 1/60;
+
+  // 移動（スティック）
+  player.x += stick.dx*0.08;
+  player.y += stick.dy*0.08;
+
+  player.invincible--;
+  player.damageTimer--;
+
+  // 難易度上昇
+  if(Math.random() < 0.02 + surviveTime*0.002){
+    spawnBullet();
+  }
+
+  for(let b of bullets){
+    b.x+=b.vx; b.y+=b.vy;
+    const dx=b.x-player.x;
+    const dy=b.y-player.y;
+    if(Math.hypot(dx,dy)<b.r+player.r && player.invincible<=0){
+      player.hp--;
+      player.invincible=30;
+      player.damageTimer=20;
+      seDamage.currentTime=0;
+      seDamage.play();
+      if(navigator.vibrate) navigator.vibrate(100);
+    }
+  }
+
+  if(player.hp<=0){
+    bgm.pause();
+    const s = surviveTime.toFixed(1);
+    if(s>bestScore){
+      bestScore=s;
+      localStorage.setItem("bestScore",bestScore);
+    }
+    gameState="gameover";
+  }
+}
+
+// ===== Draw =====
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  if(gameState==="title"){
+    ctx.fillStyle="#fff";
+    ctx.textAlign="center";
+    ctx.font="36px sans-serif";
+    ctx.fillText("弾幕サバイバル",canvas.width/2,canvas.height/2-40);
+    ctx.font="22px sans-serif";
+    ctx.fillText("BEST "+bestScore+" 秒",canvas.width/2,canvas.height/2);
+    ctx.fillText("TAP TO START",canvas.width/2,canvas.height/2+60);
+    return;
+  }
+
+  if(gameState==="gameover"){
+    ctx.fillStyle="#fff";
+    ctx.textAlign="center";
+    ctx.font="32px sans-serif";
+    ctx.fillText("GAME OVER",canvas.width/2,canvas.height/2-40);
+    ctx.font="22px sans-serif";
+    ctx.fillText("SCORE "+surviveTime.toFixed(1)+" 秒",canvas.width/2,canvas.height/2);
+    ctx.fillText("TAP TO CONTINUE",canvas.width/2,canvas.height/2+60);
+    return;
+  }
+
+  // bullets
+  ctx.fillStyle="red";
+  bullets.forEach(b=>{
+    ctx.beginPath();
+    ctx.arc(b.x,b.y,b.r,0,Math.PI*2);
+    ctx.fill();
+  });
+
+  // player
+  ctx.fillStyle=player.invincible>0?"rgba(0,255,255,0.5)":"#0f0";
+  ctx.beginPath();
+  ctx.arc(player.x,player.y,player.r,0,Math.PI*2);
+  ctx.fill();
+
+  // UI
+  ctx.fillStyle="#fff";
+  ctx.font="18px sans-serif";
+  ctx.textAlign="left";
+  ctx.fillText("TIME "+surviveTime.toFixed(1),10,30);
+
+  // HP bar
+  ctx.fillStyle="#444";
+  ctx.fillRect(10,40,100,10);
+  ctx.fillStyle="#0f0";
+  ctx.fillRect(10,40,player.hp/5*100,10);
+
+  // stick
+  ctx.strokeStyle="#555";
+  ctx.beginPath();
+  ctx.arc(stick.x,stick.y,stick.r,0,Math.PI*2);
+  ctx.stroke();
+
+  ctx.fillStyle="#888";
+  ctx.beginPath();
+  ctx.arc(stick.x+stick.dx,stick.y+stick.dy,20,0,Math.PI*2);
+  ctx.fill();
+
+  if(player.damageTimer>0){
+    ctx.fillStyle="rgba(255,0,0,0.15)";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+  }
+}
+
+// ===== Loop =====
+function loop(){
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
